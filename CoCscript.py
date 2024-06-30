@@ -6,23 +6,23 @@ load_dotenv()
 import requests
 import gspread
 from google.oauth2.service_account import Credentials
-import random
-
-def safe_execute(request):
-    for n in range(0, 5):  # Retry up to 5 times
-        try:
-            return request()  # Attempt to execute the Google Sheets API request
-        except gspread.exceptions.APIError as e:
-            if e.response.status_code == 429:  # Check if the error is due to rate limiting
-                sleep_time = (2 ** n) + (random.randint(0, 1000) / 1000)  # Exponential backoff with jitter
-                print(f"Rate limit exceeded, retrying in {sleep_time} seconds...")
-                sleep(sleep_time)
-            else:
-                raise  # Re-raise the exception if it's not a rate limit error
-    raise Exception("Failed to complete request after multiple retries.")
 
 
 # Function to make an HTTP request to the API
+def fetch_members_data_from_api(api_url, headers):
+    response = requests.get(api_url+"/members", headers)
+    if response.status_code == 200:
+        return response.json()
+    # Error 5**: server side error
+    elif response.status_code/100 == 5: 
+        print("Il server di CoC ha qualche problema, riprovo tra 5 min")
+        sleep(300) # sleep about 5 mins
+        fetch_members_data_from_api(api_url, headers)
+    # Other error
+    else:
+        raise Exception(f"Failed to fetch data from API. Status code: {response.status_code}. Response: {response.text}")
+    
+# ---------------------------------------------------------------------------------------------------------------------------------
 def fetch_war_data_from_api(api_url, headers):
     response = requests.get(api_url+"/currentwar", headers)
     # Response Ok
@@ -48,20 +48,6 @@ def fetch_war_data_from_api(api_url, headers):
     # Other error
     else:
         raise Exception(f"Failed to fetch data from API. Status code: {response.status_code}. Response: {response.text}")
-    
-# ---------------------------------------------------------------------------------------------------------------------------------
-def fetch_members_data_from_api(api_url, headers):
-    response = requests.get(api_url+"/members", headers)
-    if response.status_code == 200:
-        return response.json()
-    # Error 5**: server side error
-    elif response.status_code/100 == 5: 
-        print("Il server di CoC ha qualche problema, riprovo tra 5 min")
-        sleep(300) # sleep about 5 mins
-        fetch_members_data_from_api(api_url, headers)
-    # Other error
-    else:
-        raise Exception(f"Failed to fetch data from API. Status code: {response.status_code}. Response: {response.text}")
 
 
 # Functions to manipulate the JSON data as needed
@@ -70,7 +56,8 @@ def manipulate_data_members_list(member_list):
     return manipulated_data 
 
 # ---------------------------------------------------------------------------------------------------------------------------------
-def sumAttacksStarsOfAMember(member):
+def sumAttacksStarsOfAMember(member, max_attacks=2):
+    max_stars = max_attacks*3
     try:   #try if the member has attacked
         sum = 0
         for attack in member['attacks']:
@@ -78,10 +65,10 @@ def sumAttacksStarsOfAMember(member):
     except KeyError:    # no attacks -> no stars
         return 0
     else:
-        return sum/6    # return the number of stars divided by the maximum (6)
+        return "="+str(sum)+"/"+str(max_stars)   # return the number of stars divided by the maximum (6)
 
 def manipulate_data_current_war(json_data):
-    manipulated_data = [(member['tag'][1:], member['name'], sumAttacksStarsOfAMember(member)) for member in (json_data['clan'])['members']]
+    manipulated_data = [(member['tag'][1:], member['name'], sumAttacksStarsOfAMember(member, 2)) for member in (json_data['clan'])['members']]
     return manipulated_data 
     # Example: [('123456', 0.5), ('654321', 1), ('987654', 0)]
 
@@ -136,7 +123,6 @@ def update_members_to_google_sheet(sheet_key, credentials_path, clan_members_new
                 print(f"Ex-member {sheets.sheet1.cell(2, ex_member_col).value} was a valuable member, so I keep his data")
 
 # ---------------------------------------------------------------------------------------------------------------------------------               
-
 def find_first_free_row(sheet):
     col_values = sheet.col_values(1)
     for i, value in enumerate(col_values):
@@ -155,7 +141,7 @@ def upload_data_to_google_sheet(sheet_key, credentials_path, sheet_n:int, data):
     # Find members tag in the sheet
     IDs = sheet.row_values(1)[1:]   # get the id (tag without #) of the members
     for member in data:
-        col = 1
+        col = 2
         found = False
         for id in IDs:
             if id == member[0]: # if the member is already in the sheet
@@ -174,8 +160,6 @@ def upload_data_to_google_sheet(sheet_key, credentials_path, sheet_n:int, data):
 # ___________________________________________________________________________________________________________________________________
 def check_clan_members(coc_api_url, coc_api_headers):
     api_data = fetch_members_data_from_api(coc_api_url, coc_api_headers)
-    print("API data: ")
-    print(api_data)
     print("\n")
     clan_members_new_list = manipulate_data_members_list(api_data)
     print("Members list: ")
