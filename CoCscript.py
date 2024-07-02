@@ -38,7 +38,6 @@ def fetch_war_data_from_api(api_url, headers):
             check_clan_members(api_url, headers)
             fetch_war_data_from_api(api_url, headers)
         elif api_data['state']=="notInWar":
-            print("Nessuna war in corso, dormo 10h")
             return None
     # Error 5**: server side error
     elif response.status_code/100 == 5: 
@@ -96,7 +95,7 @@ def check_that_all_sheets_have_same_members(sheet_key, credentials_path):
 def update_members_to_google_sheet(sheet_key, credentials_path, clan_members_new_list):
     sheets = get_Google_Sheets_file(sheet_key, credentials_path)
     check_that_all_sheets_have_same_members(sheet_key, credentials_path)
-    IDs = sheets.sheet1.row_values(1)[1:]   # get the id (tag without #) of the members
+    IDs = sheets.sheet1.row_values(1)[1:-1]   # get the id (tag without #) of the members
     for member in clan_members_new_list:
         if member[0] not in IDs:  # if the member is not in the sheet
             for sheet in sheets:    # add a column for the member to all the sheets
@@ -149,11 +148,14 @@ def upload_data_to_google_sheet(sheet_key, credentials_path, sheet_n:int, data):
                 found = True
             col += 1
         if not found:
-            col = sheet.col_count
-            sheet.insert_cols(values=[], col=col)
-            sheet.update_cell(1, col, member[0])
-            sheet.update_cell(2, col, member[1])
+            new_member_col = sheet.col_count
+            for s in sheets:    # add a column for the member to all the sheets
+                s.insert_cols(values=[[None]], col=new_member_col)
+                s.update_cell(1, new_member_col, member[0])
+                s.update_cell(2, new_member_col, member[1])
             sheet.update_cell(row, col, member[2])
+            print("Aggiunto probabile ex-membro: ")
+            print(sheet.col_values(new_member_col))
     tags = sheet.col_values(1)
 
 
