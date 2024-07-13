@@ -171,7 +171,7 @@ def check_clan_members(coc_api_url, coc_api_headers):
 
 
 # Main - Fetch data from CoC API
-clan_id = os.environ.get('CLAN_ID')     #    hash character(#) -> URLencoded(%23)
+clan_id = "%23" + os.environ.get('CLAN_ID')[1:]     #    hash character(#) -> URLencoded(%23)
 api_url = "https://api.clashofclans.com/v1"
 path_clan_info = f"/clans/{clan_id}"
 request_headers = {

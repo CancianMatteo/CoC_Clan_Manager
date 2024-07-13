@@ -9,7 +9,7 @@ Python script that interact with Clash of Clans API to fetch data, manipulates t
 
 ## Installation
 1. Clone the repository: `git clone https://github.com/your-username/CoC-script-clan-manager.git`.
-2. Install the required dependencies, in terminal run: `pip install dotenv requests gspread google`.
+2. Install the required dependencies, in terminal run: `pip install dotenv requests gspread google coc.py`.
 3. Create a Google Cloud account and register the API, create a Sheets and give write access to the email of the Google API.
 4. Configure the project by editing the `.env` and `YOUR_GOOGLE_CREDENTIALS.json` files (as in the examples).
 5. Run the script: `CoCscript.py`
