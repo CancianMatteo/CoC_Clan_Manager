@@ -66,7 +66,7 @@ def sumAttacksStarsOfAMember(member, max_attacks=2):
     else:
         return "="+str(sum)+"/"+str(max_stars)   # return the number of stars divided by the maximum (6)
 
-def manipulate_data_current_war(json_data):
+def manipulate_data_current_war(json_data): 
     manipulated_data = [(member['tag'][1:], member['name'], sumAttacksStarsOfAMember(member, 2)) for member in (json_data['clan'])['members']]
     return manipulated_data 
     # Example: [('123456', 0.5), ('654321', 1), ('987654', 0)]
@@ -85,19 +85,23 @@ def get_Google_Sheets_file(sheet_key, credentials_path):
 def check_that_all_sheets_have_same_members(sheet_key, credentials_path):
     sheets = get_Google_Sheets_file(sheet_key, credentials_path)
     previous_sheet_IDs = None
+    i=1
     for sheet in sheets:
         IDs = set(sheet.row_values(1)[1:])   # get the id (tag without #) of the members
         if previous_sheet_IDs is None:
             previous_sheet_IDs = IDs
         elif previous_sheet_IDs != IDs:
-            raise Exception("The sheets have different members")
+            missing_prev = IDs.difference(previous_sheet_IDs)
+            missing_now = previous_sheet_IDs.difference(IDs)
+            raise Exception("The sheets("+str(i-1)+"-"+str(i)+") have different members:\n"+str(missing_prev)+" and "+str(missing_now))
+        i+=1
 
 def update_members_to_google_sheet(sheet_key, credentials_path, clan_members_new_list):
     sheets = get_Google_Sheets_file(sheet_key, credentials_path)
     check_that_all_sheets_have_same_members(sheet_key, credentials_path)
-    IDs = sheets.sheet1.row_values(1)[1:-1]   # get the id (tag without #) of the members
+    sheet1_IDs = sheets.sheet1.row_values(1)[1:]   # get the id (tag without #) of the members
     for member in clan_members_new_list:
-        if member[0] not in IDs:  # if the member is not in the sheet
+        if member[0] not in sheet1_IDs:  # if the member is not in the sheet
             for sheet in sheets:    # add a column for the member to all the sheets
                 new_member_col = sheet.col_count
                 sheet.insert_cols(values=[[None]], col=new_member_col)
@@ -105,9 +109,9 @@ def update_members_to_google_sheet(sheet_key, credentials_path, clan_members_new
                 sheet.update_cell(2, new_member_col, member[1])
             print("Aggiunto: ")
             print(sheets.sheet1.col_values(new_member_col))
-    for id in IDs:
+    for id in sheet1_IDs:
         if id not in [member[0] for member in clan_members_new_list]:   # if the member is not in the clan any more
-            ex_member_col = IDs.index(id)+2
+            ex_member_col = sheet1_IDs.index(id)+2
             value = sheets.sheet1.cell(4, ex_member_col).value
             if value == None:
                 value = 0
@@ -115,12 +119,14 @@ def update_members_to_google_sheet(sheet_key, credentials_path, clan_members_new
                 value = float(value.replace(',', '.'))
             if value < 1:   # if the ex-member was not a valuable member
                 print("Eliminazione: ")
-                print(sheets.sheet1.col_values(ex_member_col))
-                for sheet in sheets:
+                print(sheets.sheet1.col_values(ex_member_col))    
+                for sheet in sheets:    # delete the column of the ex-member in the sheets
+                    IDs = sheet.row_values(1)[1:]   # get the id (tag without #) of the members
+                    ex_member_col = IDs.index(id)+2
                     sheet.delete_columns(ex_member_col)        # delete the column of the ex-member
             else:
                 print(f"Ex-member {sheets.sheet1.cell(2, ex_member_col).value} was a valuable member, so I keep his data")
-
+    
 # ---------------------------------------------------------------------------------------------------------------------------------               
 def find_first_free_row(sheet):
     col_values = sheet.col_values(1)
@@ -138,14 +144,14 @@ def upload_data_to_google_sheet(sheet_key, credentials_path, sheet_n:int, data):
     row = find_first_free_row(sheet)
     sheet.update_cell(row, 1, datetime.now().strftime("%d/%m/%Y"))
     # Find members tag in the sheet
-    IDs = sheet.row_values(1)[1:]   # get the id (tag without #) of the members
+    sheet_IDs = sheet.row_values(1)[1:]   # get the id (tag without #) of the members
     for member in data:
         col = 2
         found = False
-        for id in IDs:
-            if id == member[0]: # if the member is already in the sheet
-                sheet.update_cell(row, col, member[2])
+        for sheet_id in sheet_IDs:
+            if sheet_id == member[0]: # if the member is already in the sheet
                 found = True
+                break
             col += 1
         if not found:
             new_member_col = sheet.col_count
@@ -153,10 +159,9 @@ def upload_data_to_google_sheet(sheet_key, credentials_path, sheet_n:int, data):
                 s.insert_cols(values=[[None]], col=new_member_col)
                 s.update_cell(1, new_member_col, member[0])
                 s.update_cell(2, new_member_col, member[1])
-            sheet.update_cell(row, col, member[2])
             print("Aggiunto probabile ex-membro: ")
             print(sheet.col_values(new_member_col))
-    tags = sheet.col_values(1)
+        sheet.update_cell(row, col, member[2])
 
 
 # ___________________________________________________________________________________________________________________________________
