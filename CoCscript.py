@@ -6,6 +6,7 @@ load_dotenv()
 import requests
 import gspread
 from google.oauth2.service_account import Credentials
+from googleapiclient.errors import HttpError
 
 
 # Functions to make an HTTP request to the API
@@ -221,32 +222,60 @@ def find_first_free_row(sheet):
     return len(col_values) + 1
 
 def upload_data_to_google_sheet(sheet_key, credentials_path, sheet_n:int, data):
-    sheets = get_Google_Sheets_file(sheet_key, credentials_path)
-    # Select which sheet of the file you want to work on
-    sheet = sheets.get_worksheet(sheet_n)
+    max_retries = 5
+    retry_count = 0
+    backoff_time = 60  # Start with 1 minute
 
-    # Find the first free row and writes data in it
-    row = find_first_free_row(sheet)
-    sheet.update_cell(row, 1, datetime.now().strftime("%d/%m/%Y"))
-    # Find members tag in the sheet
-    sheet_IDs = sheet.row_values(1)[1:]   # get the id (tag without #) of the members
-    for member in data:
-        col = 2
-        found = False
-        for sheet_id in sheet_IDs:
-            if sheet_id == member[0]: # if the member is already in the sheet
-                found = True
-                break
-            col += 1
-        if not found:
-            new_member_col = sheet.col_count
-            for s in sheets:    # add a column for the member to all the sheets
-                s.insert_cols(values=[[None]], col=new_member_col)
-                s.update_cell(1, new_member_col, member[0])
-                s.update_cell(2, new_member_col, member[1])
-            print("Aggiunto probabile ex-membro: ")
-            print(sheet.col_values(new_member_col))
-        sheet.update_cell(row, col, member[2])
+    while retry_count < max_retries:
+        try:
+            
+            sheets = get_Google_Sheets_file(sheet_key, credentials_path)
+            # Select which sheet of the file you want to work on
+            sheet = sheets.get_worksheet(sheet_n)
+
+            # Find the first free row and writes data in it
+            row = find_first_free_row(sheet)
+            updates = [
+                {
+                    'range': f'A{row}',
+                    'values': [[datetime.now().strftime("%d/%m/%Y")]]
+                }
+            ]
+
+            # Find members tag in the sheet
+            sheet_IDs = sheet.row_values(1)[1:]   # get the id (tag without #) of the members
+            for member in data:
+                col = 2
+                found = False
+                for sheet_id in sheet_IDs:
+                    if sheet_id == member[0]: # if the member is already in the sheet
+                        found = True
+                        break
+                    col += 1
+                if not found:
+                    new_member_col = sheet.col_count
+                    for s in sheets:    # add a column for the member to all the sheets
+                        s.insert_cols(values=[[None]], col=new_member_col)
+                        s.update_cell(1, new_member_col, member[0])
+                        s.update_cell(2, new_member_col, member[1])
+                    print("Aggiunto probabile ex-membro: ")
+                    print(sheet.col_values(new_member_col))
+                updates.append({
+                    'range': f'{gspread.utils.rowcol_to_a1(row, col)}',
+                    'values': [[member[2]]]
+                })
+
+            # Perform batch update
+            sheet.batch_update(updates)
+            break
+        except HttpError as e:
+            if e.resp.status == 429:
+                print(f"Quota exceeded. Retrying in {backoff_time} seconds...")
+                sleep(backoff_time)
+                retry_count += 1
+                backoff_time *= 2  # Exponential backoff
+            else:
+                raise e
 
 
 def upload_war_data_to_google_sheet(sheet_key, credentials_path, data):
