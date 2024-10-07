@@ -5,8 +5,8 @@ from dotenv import load_dotenv
 load_dotenv()
 import requests
 import gspread
+from gspread.exceptions import APIError
 from google.oauth2.service_account import Credentials
-from googleapiclient.errors import HttpError
 
 
 # Functions to make an HTTP request to the API
@@ -22,8 +22,7 @@ def fetch_members_data_from_api(api_clan_url, headers):
     # Other error
     else:
         raise Exception(f"Failed to fetch data from API. Status code: {response.status_code}. Response: {response.text}")
-    
-# ---------------------------------------------------------------------------------------------------------------------------------
+
 def fetch_war_data_from_api(api_clan_url, headers):
     response = requests.get(api_clan_url+"/currentwar", headers)
     # Response Ok
@@ -34,7 +33,7 @@ def fetch_war_data_from_api(api_clan_url, headers):
         elif(api_data['state']=="preparation" or api_data['state']=="inWar"):
             date_format = "%Y%m%dT%H%M%S.%fZ"
             secs_to_war_end = (datetime.strptime(api_data['endTime'], date_format) - datetime.now()).total_seconds()
-            print("War in corso, dormo fino alla fine")
+            print("War in corso, dormo fino alla fine: "+datetime.strptime(api_data['endTime'], date_format))
             sleep(secs_to_war_end+30) # sleep until war is ended
             check_clan_members(api_clan_url, headers)
             fetch_war_data_from_api(api_clan_url, headers)
@@ -49,7 +48,6 @@ def fetch_war_data_from_api(api_clan_url, headers):
     else:
         raise Exception(f"Failed to fetch data from API. Status code: {response.status_code}. Response: {response.text}")
 
-# ---------------------------------------------------------------------------------------------------------------------------------
 def fetch_warleague_wartags_data_from_api(api_url, path_clan_info, headers):
     response = requests.get(api_url+path_clan_info+"/currentwar/leaguegroup", headers)
     if response.status_code == 200:
@@ -63,7 +61,7 @@ def fetch_warleague_wartags_data_from_api(api_url, path_clan_info, headers):
         elif(api_data['state']=="preparation" or api_data['state']=="inWar"): #war ongoing, we need to wait
             date_format = "%Y%m%dT%H%M%S.%fZ"
             secs_to_war_end = (datetime.now().replace(day=10) - datetime.now()).total_seconds()
-            print("War in corso, dormo fino alla fine")
+            print("CWL in corso, dormo fino a: "+str(datetime.now().replace(day=10)))
             sleep(secs_to_war_end+300) # sleep until war is ended
             requests.get(api_url+path_clan_info+"/currentwar/leaguegroup", headers)
             api_data =  response.json()
@@ -72,7 +70,7 @@ def fetch_warleague_wartags_data_from_api(api_url, path_clan_info, headers):
                 response = requests.get(api_url+"/clanwarleagues/wars/"+last_war_tag, headers)
                 api_data =  response.json()
                 secs_to_war_end = (datetime.strptime(api_data['endTime'], date_format) - datetime.now()).total_seconds()
-                print("Ultima war in corso, dormo fino alla fine")
+                print("Ultima war in corso, dormo fino alla fine: "+datetime.strptime(api_data['endTime'], date_format))
                 sleep(secs_to_war_end+30) # sleep until war is ended
             check_clan_members(api_url+path_clan_info, headers)
             fetch_warleague_wartags_data_from_api(api_url, path_clan_info, headers)
@@ -98,14 +96,13 @@ def fetch_warleague_results_from_api(api_wars_url, war_tag, headers):
         print("Il server di CoC ha qualche problema, riprovo tra 5 min")
         sleep(300) # sleep 5 mins
         fetch_warleague_results_from_api(api_url+"/clanwarleagues/wars/", war_tag, headers)
-
+# ---------------------------------------------------------------------------------------------------------------------------------
 
 # Functions to manipulate the JSON data as needed
 def manipulate_data_members_list(member_list):
     manipulated_data = [[(member['tag'])[1:], member['name']] for member in member_list['items']]
     return manipulated_data 
 
-# ---------------------------------------------------------------------------------------------------------------------------------
 def sumAttacksStarsOfAMember(member, max_attacks=2):
     max_stars = max_attacks*3
     try:   #try if the member has attacked
@@ -131,7 +128,7 @@ def manipulate_data_current_war(json_data):
         members_stars[member] = "="+str(members_stars[member])+"/"+str(2*3)
     return members_stars
     # Example: {'123456': "=3/6", '654321': "=6/6", '987654': "=0/6"}
-# ---------------------------------------------------------------------------------------------------------------------------------
+
 def manipulate_data_cwl_rounds(rounds_data):
     members_stars = {}
     members_attacks_doable = {}
@@ -156,7 +153,7 @@ def manipulate_data_cwl_rounds(rounds_data):
         members_attacks_done[member] = "="+str(members_attacks_done[member])+"/"+str(members_attacks_doable[member])
     return members_stars, members_attacks_done
     # Example: {'123456': "=14/21", '654321': "=18/21", '987654': "=11/15"}, {'123456': "=6/7", '654321': "=7/7", '987654': "=4/5"}
-
+# ---------------------------------------------------------------------------------------------------------------------------------
 
 # Functions to upload data to Google Sheet
 def get_Google_Sheets_file(sheet_key, credentials_path):
@@ -210,8 +207,18 @@ def update_members_to_google_sheet(sheet_key, credentials_path, clan_members_new
                     IDs = sheet.row_values(1)[1:]   # get the id (tag without #) of the members
                     ex_member_col = IDs.index(id)+2
                     sheet.delete_columns(ex_member_col)        # delete the column of the ex-member
+                sheet1_IDs.remove(id)
             else:
                 print(f"Ex-member {sheets.sheet1.cell(2, ex_member_col).value} was a valuable member, so I keep his data")
+
+def check_clan_members(coc_api_url, coc_api_headers):
+    api_data = fetch_members_data_from_api(coc_api_url, coc_api_headers)
+    print("\n")
+    clan_members_new_list = manipulate_data_members_list(api_data)
+    print("Members list: ")
+    print(clan_members_new_list)
+    print("\n")
+    update_members_to_google_sheet(sheet_key, credentials_path, clan_members_new_list)
     
 # ---------------------------------------------------------------------------------------------------------------------------------               
 def find_first_free_row(sheet):
@@ -268,7 +275,7 @@ def upload_data_to_google_sheet(sheet_key, credentials_path, sheet_n:int, data):
             # Perform batch update
             sheet.batch_update(updates)
             break
-        except HttpError as e:
+        except APIError as e:
             if e.resp.status == 429:
                 print(f"Quota exceeded. Retrying in {backoff_time} seconds...")
                 sleep(backoff_time)
@@ -277,24 +284,13 @@ def upload_data_to_google_sheet(sheet_key, credentials_path, sheet_n:int, data):
             else:
                 raise e
 
-
 def upload_war_data_to_google_sheet(sheet_key, credentials_path, data):
     upload_data_to_google_sheet(sheet_key, credentials_path, 0, data)
-
 
 def upload_cwl_data_to_google_sheet(sheet_key, credentials_path, manipulated_stars_data, manipulated_partecipation_data):
     upload_data_to_google_sheet(sheet_key, credentials_path, 1, manipulated_stars_data)
     upload_data_to_google_sheet(sheet_key, credentials_path, 2, manipulated_partecipation_data)
-
 # ___________________________________________________________________________________________________________________________________
-def check_clan_members(coc_api_url, coc_api_headers):
-    api_data = fetch_members_data_from_api(coc_api_url, coc_api_headers)
-    print("\n")
-    clan_members_new_list = manipulate_data_members_list(api_data)
-    print("Members list: ")
-    print(clan_members_new_list)
-    print("\n")
-    update_members_to_google_sheet(sheet_key, credentials_path, clan_members_new_list)
 
 
 # Main - Fetch data from CoC API
