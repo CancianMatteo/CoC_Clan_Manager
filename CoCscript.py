@@ -294,11 +294,11 @@ def upload_cwl_data_to_google_sheet(sheet_key, credentials_path, manipulated_sta
 
 
 # Main - Fetch data from CoC API
-clan_id = "%23" + os.environ.get('CLAN_ID')[1:]     #    hash character(#) -> URLencoded(%23)
+clan_id = "%23" + os.environ.get('CLAN_TAG')[1:]     #    hash character(#) -> URLencoded(%23)
 api_url = "https://api.clashofclans.com/v1"
 path_clan_info = f"/clans/{clan_id}"
 request_headers = {
-    'Authorization': f'Bearer {os.environ.get('COC_API_KEY')}',
+    'Authorization': f"Bearer {os.environ.get('COC_API_KEY')}",
     'Accept': 'application/json',
 }
 sheet_key = os.environ.get('SHEET_KEY')

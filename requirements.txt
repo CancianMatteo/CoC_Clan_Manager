@@ -1,0 +1,11 @@
+# Dotenv library for loading environment variables from a .env file
+python-dotenv==0.21.1
+
+# Requests library for making HTTP requests
+requests==2.26.0
+
+# Google API and OAuth2 client library
+google==3.0.0
+
+# Gspread library for Google Sheets API
+gspread==5.1.1
