@@ -7,6 +7,7 @@ import requests
 import gspread
 from gspread.exceptions import APIError
 from google.oauth2.service_account import Credentials
+import json
 
 
 # Functions to make an HTTP request to the API
@@ -52,12 +53,18 @@ def fetch_warleague_wartags_data_from_api(api_url, path_clan_info, headers):
     response = requests.get(api_url+path_clan_info+"/currentwar/leaguegroup", headers)
     if response.status_code == 200:
         api_data =  response.json()
-        if api_data['state']=="warEnded":   #war ended, we can fetch the results
-            war_tags = api_data["rounds"]["warTags"]
-            CWL_rounds = []
-            for war_tag in war_tags:
-                CWL_rounds.append(fetch_warleague_results_from_api(api_url+"/clanwarleagues/wars/", war_tag, headers))
-            return CWL_rounds   # IDEAL END
+        if api_data['state']=="ended":   #war ended, we can fetch the results
+            rounds_war_tags = api_data["rounds"]
+            my_clan_CWL_rounds = []
+            for round_war_tags in rounds_war_tags:
+                for war_tag in round_war_tags["warTags"]:
+                    api_data_round = fetch_warleague_results_from_api(api_url+"/clanwarleagues/wars/", "%23"+war_tag[1:], headers)
+                    if api_data_round["clan"]["tag"]==os.environ.get('CLAN_TAG'):
+                        my_clan_CWL_rounds.append(api_data_round)
+                    elif api_data_round["opponent"]["tag"]==os.environ.get('CLAN_TAG'):
+                        api_data_round["clan"], api_data_round["opponent"] = api_data_round["opponent"], api_data_round["clan"]
+                        my_clan_CWL_rounds.append(api_data_round)
+            return my_clan_CWL_rounds   # IDEAL END
         elif(api_data['state']=="preparation" or api_data['state']=="inWar"): #war ongoing, we need to wait
             date_format = "%Y%m%dT%H%M%S.%fZ"
             secs_to_war_end = (datetime.now().replace(day=10) - datetime.now()).total_seconds()
@@ -118,41 +125,42 @@ def manipulate_data_current_war(json_data):
     members_stars = {}
     for member in json_data['clan']['members']:
         tag = member['tag'][1:]
-        members_stars[tag] = 0
+        members_stars[tag] = (member['name'],0)
         try:   #try if the member has attacked
-            members_stars[tag] += member["attacks"][0]["stars"]
-            members_stars[tag] += member["attacks"][1]["stars"]
+            members_stars[tag][1] += member["attacks"][0]["stars"]
+            members_stars[tag][1] += member["attacks"][1]["stars"]
         except KeyError:    # no attacks -> no stars
             pass
     for member in members_stars:
-        members_stars[member] = "="+str(members_stars[member])+"/"+str(2*3)
+        members_stars[member][1] = "="+str(members_stars[member][1])+"/"+str(2*3)
     return members_stars
-    # Example: {'123456': "=3/6", '654321': "=6/6", '987654': "=0/6"}
+    # Example: {'123456': (nome1, "=3/6"), '654321': (nome2, "=6/6"), '987654': (nome3, "=0/6")}
 
 def manipulate_data_cwl_rounds(rounds_data):
     members_stars = {}
-    members_attacks_doable = {}
     members_attacks_done = {}
+    members_attacks_doable = {}
     for round in rounds_data:
         for member in round['clan']['members']:
             tag = member['tag'][1:]
             if members_attacks_doable.get(tag, None) == None:
-                members_stars[tag] = 0
-                members_attacks_done[tag] = 0
+                members_stars[tag] = [member['name'],0]
+                members_attacks_done[tag] = [member['name'],0]
                 members_attacks_doable[tag] = 0
             try:   #try if the member has attacked
                 stars = member["attacks"][0]["stars"]
             except KeyError:    # no attacks -> no stars
                 stars = -1
             if stars != -1:
-                members_stars[tag] += stars
-                members_attacks_done[tag] += 1
+                members_stars[tag][1] += stars
+                members_attacks_done[tag][1] += 1
             members_attacks_doable[tag] += 1
     for member in members_attacks_doable:
-        members_stars[member] = "="+str(members_stars[member])+"/"+str(members_attacks_doable[member]*3)
-        members_attacks_done[member] = "="+str(members_attacks_done[member])+"/"+str(members_attacks_doable[member])
+        members_stars[member][1] = "="+str(members_stars[member][1])+"/"+str(members_attacks_doable[member]*3)
+        members_attacks_done[member][1] = "="+str(members_attacks_done[member][1])+"/"+str(members_attacks_doable[member])
     return members_stars, members_attacks_done
-    # Example: {'123456': "=14/21", '654321': "=18/21", '987654': "=11/15"}, {'123456': "=6/7", '654321': "=7/7", '987654': "=4/5"}
+    # Example: {'123456': (nome1, "=14/21"), '654321': (nome2, "=18/21"), '987654': (nome3, "=11/15")}, 
+    #          {'123456': (nome1, "=6/7"), '654321': (nome2, "=7/7"), '987654': (nome3, "=4/5")}
 # ---------------------------------------------------------------------------------------------------------------------------------
 
 # Functions to upload data to Google Sheet
@@ -228,14 +236,13 @@ def find_first_free_row(sheet):
             return i + 1
     return len(col_values) + 1
 
-def upload_data_to_google_sheet(sheet_key, credentials_path, sheet_n:int, data):
-    max_retries = 5
+def upload_data_to_google_sheet(sheet_key, credentials_path, sheet_n:int, members_data:dict):
+    max_retries = 10
     retry_count = 0
     backoff_time = 60  # Start with 1 minute
 
     while retry_count < max_retries:
         try:
-            
             sheets = get_Google_Sheets_file(sheet_key, credentials_path)
             # Select which sheet of the file you want to work on
             sheet = sheets.get_worksheet(sheet_n)
@@ -251,11 +258,11 @@ def upload_data_to_google_sheet(sheet_key, credentials_path, sheet_n:int, data):
 
             # Find members tag in the sheet
             sheet_IDs = sheet.row_values(1)[1:]   # get the id (tag without #) of the members
-            for member in data:
+            for member_tag, member_name_value in members_data.items():
                 col = 2
                 found = False
                 for sheet_id in sheet_IDs:
-                    if sheet_id == member[0]: # if the member is already in the sheet
+                    if sheet_id == member_tag: # if the member is already in the sheet
                         found = True
                         break
                     col += 1
@@ -263,20 +270,20 @@ def upload_data_to_google_sheet(sheet_key, credentials_path, sheet_n:int, data):
                     new_member_col = sheet.col_count
                     for s in sheets:    # add a column for the member to all the sheets
                         s.insert_cols(values=[[None]], col=new_member_col)
-                        s.update_cell(1, new_member_col, member[0])
-                        s.update_cell(2, new_member_col, member[1])
+                        s.update_cell(1, new_member_col, member_tag)
+                        s.update_cell(2, new_member_col, member_name_value[0])
                     print("Aggiunto probabile ex-membro: ")
                     print(sheet.col_values(new_member_col))
                 updates.append({
                     'range': f'{gspread.utils.rowcol_to_a1(row, col)}',
-                    'values': [[member[2]]]
+                    'values': [[member_name_value[1]]]
                 })
 
             # Perform batch update
-            sheet.batch_update(updates)
+            sheet.batch_update(updates, value_input_option='USER_ENTERED')
             break
         except APIError as e:
-            if e.resp.status == 429:
+            if e.response.status_code == 429:
                 print(f"Quota exceeded. Retrying in {backoff_time} seconds...")
                 sleep(backoff_time)
                 retry_count += 1
@@ -307,8 +314,7 @@ while(True):
     check_clan_members(api_url+path_clan_info, request_headers)
     api_data = fetch_warleague_wartags_data_from_api(api_url, path_clan_info, request_headers)
     if api_data is not None:
-        print("API data: ")
-        print(api_data)
+        print("API data: "+json.dumps(api_data, indent=2))
         # Manipulate the data: take the JSON and give two associative array: {playerID: nStars/TOT}, {playerID: nAttacks/TOT}
         manipulated_stars_data, manipulated_partecipation_data = manipulate_data_cwl_rounds(api_data)
         print("\n\nDati manipolati: ")
@@ -318,8 +324,7 @@ while(True):
     else:
         api_data = fetch_war_data_from_api(api_url+path_clan_info, request_headers)
         if api_data is not None:
-            print("API data: ")
-            print(api_data)
+            print("API data: "+json.dumps(api_data, indent=2))
             # Manipulate the data: take the JSON and give an array of [(playerID, nStars)]
             manipulated_data = manipulate_data_current_war(api_data)
             print("\n\nDati manipolati: ")
