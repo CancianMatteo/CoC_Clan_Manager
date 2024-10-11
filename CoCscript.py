@@ -67,17 +67,17 @@ def fetch_warleague_wartags_data_from_api(api_url, path_clan_info, headers):
             return my_clan_CWL_rounds   # IDEAL END
         elif(api_data['state']=="preparation" or api_data['state']=="inWar"): #war ongoing, we need to wait
             date_format = "%Y%m%dT%H%M%S.%fZ"
-            secs_to_war_end = (datetime.now().replace(day=10) - datetime.now()).total_seconds()
-            print("CWL in corso, dormo fino a: "+str(datetime.now().replace(day=10)))
-            sleep(secs_to_war_end+300) # sleep until war is ended
+            secs_to_war_end = (datetime.now().replace(day=9) - datetime.now()).total_seconds()
+            print("CWL in corso, dormo fino a: "+str(datetime.now().replace(day=9)))
+            sleep(secs_to_war_end+30) # sleep until war is ended
             requests.get(api_url+path_clan_info+"/currentwar/leaguegroup", headers)
             api_data =  response.json()
             if(api_data['state']=="preparation" or api_data['state']=="inWar"):
-                last_war_tag = api_data["rounds"]["warTags"][-1]
-                response = requests.get(api_url+"/clanwarleagues/wars/"+last_war_tag, headers)
+                last_war_tag = api_data["rounds"][-1]["warTags"][0]
+                response = requests.get(api_url+"/clanwarleagues/wars/"+"%23"+last_war_tag[1:], headers)
                 api_data =  response.json()
                 secs_to_war_end = (datetime.strptime(api_data['endTime'], date_format) - datetime.now()).total_seconds()
-                print("Ultima war in corso, dormo fino alla fine: "+datetime.strptime(api_data['endTime'], date_format))
+                print("Ultima war in corso, dormo fino alla fine: "+str(datetime.strptime(api_data['endTime'], date_format)))
                 sleep(secs_to_war_end+30) # sleep until war is ended
             check_clan_members(api_url+path_clan_info, headers)
             fetch_warleague_wartags_data_from_api(api_url, path_clan_info, headers)
