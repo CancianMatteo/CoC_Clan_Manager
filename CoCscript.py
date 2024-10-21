@@ -34,7 +34,7 @@ def fetch_war_data_from_api(api_clan_url, headers):
         elif(api_data['state']=="preparation" or api_data['state']=="inWar"):
             date_format = "%Y%m%dT%H%M%S.%fZ"
             secs_to_war_end = (datetime.strptime(api_data['endTime'], date_format) - datetime.now()).total_seconds()
-            print("War in corso, dormo fino alla fine: "+datetime.strptime(api_data['endTime'], date_format))
+            print("War in corso, dormo fino alla fine: "+str(datetime.strptime(api_data['endTime'], date_format)))
             sleep(secs_to_war_end+30) # sleep until war is ended
             check_clan_members(api_clan_url, headers)
             fetch_war_data_from_api(api_clan_url, headers)
@@ -125,7 +125,7 @@ def manipulate_data_current_war(json_data):
     members_stars = {}
     for member in json_data['clan']['members']:
         tag = member['tag'][1:]
-        members_stars[tag] = (member['name'],0)
+        members_stars[tag] = [member['name'],0]
         try:   #try if the member has attacked
             members_stars[tag][1] += member["attacks"][0]["stars"]
             members_stars[tag][1] += member["attacks"][1]["stars"]
@@ -159,8 +159,8 @@ def manipulate_data_cwl_rounds(rounds_data):
         members_stars[member][1] = "="+str(members_stars[member][1])+"/"+str(members_attacks_doable[member]*3)
         members_attacks_done[member][1] = "="+str(members_attacks_done[member][1])+"/"+str(members_attacks_doable[member])
     return members_stars, members_attacks_done
-    # Example: {'123456': (nome1, "=14/21"), '654321': (nome2, "=18/21"), '987654': (nome3, "=11/15")}, 
-    #          {'123456': (nome1, "=6/7"), '654321': (nome2, "=7/7"), '987654': (nome3, "=4/5")}
+    # Example: {'123456': [nome1, "=14/21"], '654321': [nome2, "=18/21"], '987654': [nome3, "=11/15"]}, 
+    #          {'123456': [nome1, "=6/7"], '654321': [nome2, "=7/7"], '987654': [nome3, "=4/5"]}
 # ---------------------------------------------------------------------------------------------------------------------------------
 
 # Functions to upload data to Google Sheet
