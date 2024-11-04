@@ -200,6 +200,7 @@ def update_members_to_google_sheet(sheet_key, credentials_path, clan_members_new
                 sheet.update_cell(2, new_member_col, member[1])
             print("Aggiunto: ")
             print(sheets.sheet1.col_values(new_member_col))
+            sleep(100) # sleep 100s to avoid API rate limit
     for id in sheet1_IDs:
         if id not in [member[0] for member in clan_members_new_list]:   # if the member is not in the clan any more
             ex_member_col = sheet1_IDs.index(id)+2
@@ -209,13 +210,14 @@ def update_members_to_google_sheet(sheet_key, credentials_path, clan_members_new
             else:
                 value = float(value.replace(',', '.'))
             if value < 1:   # if the ex-member was not a valuable member
-                print("Eliminazione: ")
-                print(sheets.sheet1.col_values(ex_member_col))    
+                ex_member_data = sheets.sheet1.col_values(ex_member_col)   
                 for sheet in sheets:    # delete the column of the ex-member in the sheets
                     IDs = sheet.row_values(1)[1:]   # get the id (tag without #) of the members
                     ex_member_col = IDs.index(id)+2
                     sheet.delete_columns(ex_member_col)        # delete the column of the ex-member
                 sheet1_IDs.remove(id)
+                print("Eliminazione: "+str(ex_member_data))
+                sleep(100) # sleep 100ms to avoid API rate limit
             else:
                 print(f"Ex-member {sheets.sheet1.cell(2, ex_member_col).value} was a valuable member, so I keep his data")
 
