@@ -165,7 +165,7 @@ def manipulate_data_cwl_rounds(rounds_data):
 
 # Functions to upload data to Google Sheet
 def get_Google_Sheets_file(sheet_key, credentials_path):
-    # Use service account credentials to access Google Sheets APIv 
+    # Use service account credentials to access Google Sheets API
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     credentials = Credentials.from_service_account_file(credentials_path, scopes=scope)
     gClient = gspread.authorize(credentials)
@@ -209,7 +209,7 @@ def update_members_to_google_sheet(sheet_key, credentials_path, clan_members_new
                 value = 0
             else:
                 value = float(value.replace(',', '.'))
-            if value < 1:   # if the ex-member was not a valuable member
+            if value < 5:   # if the ex-member was not a valuable member
                 ex_member_data = sheets.sheet1.col_values(ex_member_col)   
                 for sheet in sheets:    # delete the column of the ex-member in the sheets
                     IDs = sheet.row_values(1)[1:]   # get the id (tag without #) of the members
@@ -217,9 +217,10 @@ def update_members_to_google_sheet(sheet_key, credentials_path, clan_members_new
                     sheet.delete_columns(ex_member_col)        # delete the column of the ex-member
                 sheet1_IDs.remove(id)
                 print("Eliminazione: "+str(ex_member_data))
-                sleep(100) # sleep 100ms to avoid API rate limit
             else:
                 print(f"Ex-member {sheets.sheet1.cell(2, ex_member_col).value} was a valuable member, so I keep his data")
+                print("Sleeping...")
+                sleep(100) # sleep 100s to avoid API rate limit
 
 def check_clan_members(coc_api_url, coc_api_headers):
     api_data = fetch_members_data_from_api(coc_api_url, coc_api_headers)
