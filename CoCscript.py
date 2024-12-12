@@ -189,38 +189,47 @@ def check_that_all_sheets_have_same_members(sheet_key, credentials_path):
 
 def update_members_to_google_sheet(sheet_key, credentials_path, clan_members_new_list):
     sheets = get_Google_Sheets_file(sheet_key, credentials_path)
-    check_that_all_sheets_have_same_members(sheet_key, credentials_path)
-    sheet1_IDs = sheets.sheet1.row_values(1)[1:]   # get the id (tag without #) of the members
-    for member in clan_members_new_list:
-        if member[0] not in sheet1_IDs:  # if the member is not in the sheet
-            for sheet in sheets:    # add a column for the member to all the sheets
-                new_member_col = sheet.col_count
-                sheet.insert_cols(values=[[None]], col=new_member_col)
-                sheet.update_cell(1, new_member_col, member[0])
-                sheet.update_cell(2, new_member_col, member[1])
-            print("Aggiunto: ")
-            print(sheets.sheet1.col_values(new_member_col))
-            sleep(100) # sleep 100s to avoid API rate limit
-    for id in sheet1_IDs:
-        if id not in [member[0] for member in clan_members_new_list]:   # if the member is not in the clan any more
-            ex_member_col = sheet1_IDs.index(id)+2
-            value = sheets.sheet1.cell(4, ex_member_col).value
-            if value == None:
-                value = 0
+    backoff_time = 60  # Start with 1 minute
+    try:
+        check_that_all_sheets_have_same_members(sheet_key, credentials_path)
+        sheet1_IDs = sheets.sheet1.row_values(1)[1:]   # get the id (tag without #) of the members
+        for member in clan_members_new_list:
+            if member[0] not in sheet1_IDs:  # if the member is not in the sheet
+                for sheet in sheets:    # add a column for the member to all the sheets
+                    new_member_col = sheet.col_count
+                    sheet.insert_cols(values=[[None]], col=new_member_col)
+                    sheet.update_cell(1, new_member_col, member[0])
+                    sheet.update_cell(2, new_member_col, member[1])
+                print("Aggiunto: ")
+                print(sheets.sheet1.col_values(new_member_col))
+                sleep(5) # sleep 5s to avoid API rate limit
+        for id in sheet1_IDs:
+            if id not in [member[0] for member in clan_members_new_list]:   # if the member is not in the clan any more
+                ex_member_col = sheet1_IDs.index(id)+2
+                value = sheets.sheet1.cell(4, ex_member_col).value
+                if value == None:
+                    value = 0
+                else:
+                    value = float(value.replace(',', '.'))
+                if value < 5:   # if the ex-member was not a valuable member
+                    ex_member_data = sheets.sheet1.col_values(ex_member_col)   
+                    for sheet in sheets:    # delete the column of the ex-member in the sheets
+                        IDs = sheet.row_values(1)[1:]   # get the id (tag without #) of the members
+                        ex_member_col = IDs.index(id)+2
+                        sheet.delete_columns(ex_member_col)        # delete the column of the ex-member
+                    sheet1_IDs.remove(id)
+                    print("Eliminazione: "+str(ex_member_data))
+                else:
+                    print(f"Ex-member {sheets.sheet1.cell(2, ex_member_col).value} was a valuable member, so I keep his data")
+                sleep(5) # sleep 5s to avoid API rate limit
+    except APIError as e:
+            if e.response.status_code == 429:
+                print(f"Quota exceeded. Retrying in {backoff_time} seconds...")
+                sleep(backoff_time)
+                retry_count += 1
+                backoff_time *= 2  # Exponential backoff
             else:
-                value = float(value.replace(',', '.'))
-            if value < 5:   # if the ex-member was not a valuable member
-                ex_member_data = sheets.sheet1.col_values(ex_member_col)   
-                for sheet in sheets:    # delete the column of the ex-member in the sheets
-                    IDs = sheet.row_values(1)[1:]   # get the id (tag without #) of the members
-                    ex_member_col = IDs.index(id)+2
-                    sheet.delete_columns(ex_member_col)        # delete the column of the ex-member
-                sheet1_IDs.remove(id)
-                print("Eliminazione: "+str(ex_member_data))
-            else:
-                print(f"Ex-member {sheets.sheet1.cell(2, ex_member_col).value} was a valuable member, so I keep his data")
-                print("Sleeping...")
-                sleep(100) # sleep 100s to avoid API rate limit
+                raise e
 
 def check_clan_members(coc_api_url, coc_api_headers):
     api_data = fetch_members_data_from_api(coc_api_url, coc_api_headers)
